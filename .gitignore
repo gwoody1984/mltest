@@ -1,0 +1,25 @@
+# User-specific stuff:
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/Project_Default.xml
+.idea/dictionaries
+.idea/**/*.iml
+.idea/misc.xml
+**/*.db
+
+# Sensitive or high-churn files:
+.idea/**/dataSources/
+.idea/**/dataSources.ids
+.idea/**/dataSources.xml
+.idea/**/dataSources.local.xml
+.idea/**/sqlDataSources.xml
+.idea/**/dynamic.xml
+.idea/**/uiDesigner.xml
+
+## File-based project format:
+*.iws
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*$py.class

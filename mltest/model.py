@@ -1,8 +1,11 @@
 import numpy as np
 import tensorflow as tf
-import tensorflow.contrib as rnn
+from tensorflow.contrib import rnn
 
-from mltest import test_data
+from mltest import GlycemiqDataContext
+
+context = GlycemiqDataContext()
+test_data = context.get_data()
 
 # feature engineering
 test_data['diff5'] = np.log(test_data['bg']) - np.log(test_data['bg-5'])
@@ -11,20 +14,24 @@ test_data['diff15'] = (np.log(test_data['bg-10']) - np.log(test_data['bg-15']))
 test_data['diff20'] = (np.log(test_data['bg-15']) - np.log(test_data['bg-20']))
 test_data['diff25'] = (np.log(test_data['bg-20']) - np.log(test_data['bg-25']))
 test_data['diff30'] = (np.log(test_data['bg-25']) - np.log(test_data['bg-30']))
-test_data['difflabel'] = np.log(test_data['label']) - np.log(test_data['bg'])
+#test_data['difflabel'] = np.log(test_data['label']) - np.log(test_data['bg'])
 
 # list of columns we care about
-cols = ['bg', 'difflabel', 'diff5', 'diff10', 'diff15', 'diff20', 'diff25',
+cols = ['bg', 'diff5', 'diff10', 'diff15', 'diff20', 'diff25',
         'diff30', 'glycemicindex', 'calories', 'carbs', 'fiber', 'sugar',
         'basal_insulin', 'bolus_insulin']
 labels = ['label']
 
 # remove columns we don't need
-ix = test_data[cols.append(labels)].isnull().any(axis=1)
-test_data = test_data.loc[~ix, :]
+x_data = test_data[cols]
+y_data = test_data[labels]
+ix = x_data.isnull().any(axis=1)
+iy = y_data.isnull().any(axis=1)
+x_data = test_data.loc[~ix, :]
+y_data = test_data.loc[~iy, :]
 
 # extract the test data from the labels
-x_data = test_data.as_matrix(cols)
+x_data = x_data.as_matrix(cols)
 y_data = test_data.as_matrix(labels)
 
 # Params
@@ -42,7 +49,7 @@ weights = tf.Variable(tf.random_normal([last_layer_neurons, feature_count]), nam
 biases = tf.Variable(tf.random_normal([label_count]), name="biases")
 
 # define input data and labels
-x_input = tf.placeholder(tf.float32, [row_count, feature_count], name="x_input")
+x_input = tf.placeholder(tf.float32, [batch_size, feature_count], name="x_input")
 y_input = tf.placeholder(tf.float32, [label_count], name="y_input")
 
 # reshape the inputs into batch sizes
