@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta, time
 import psycopg2
 import psycopg2.extras
-
+import numpy as np
 import pandas as pd
+
+from datetime import datetime, timedelta, time
 
 
 class GlycemiqDataContext:
@@ -105,6 +106,9 @@ class GlycemiqDataContext:
         self._user_id = "5WG9G5"
         self._start_date = datetime(2017, 8, 7)
         self._date_range = 4
+
+        self._curr_row = 0
+        self._test_data = pd.DataFrame()
 
         self._conversions = {
             'µg': self._convert_micrograms_to_grams,
@@ -332,19 +336,69 @@ class GlycemiqDataContext:
     def _convert_nochange(self, value):
         return value
 
-    def get_data_columns(self):
+    def _all_columns(self):
+
+        # order of these columns matter
         return ['timestamp', 'label', 'bg', 'bg-5', 'bg-10', 'bg-15', 'bg-20', 'bg-25', 'bg-30',
                 'steps', 'sedentary_minutes', 'lightly_active_minutes', 'fairly_active_minutes', 'very_active_minutes',
                 'calories_out', 'glycemicindex', 'calories', 'calcium', 'carbs', 'fiber', 'folate', 'iron', 'magnesium',
                 'monounsaturatedfat', 'niacin', 'phosphorus', 'polyunsaturatedfat', 'potassium', 'protein',
-                'riboflavin',
-                'saturatedfat', 'sodium', 'sugar', 'thiamin', 'totalfat', 'vitamina', 'vitaminb6', 'vitaminc',
-                'vitamine',
-                'vitamink', 'zinc', 'total_minutes_of_sleep', 'basal_insulin', 'bolus_insulin']
+                'riboflavin', 'saturatedfat', 'sodium', 'sugar', 'thiamin', 'totalfat', 'vitamina', 'vitaminb6',
+                'vitaminc', 'vitamine', 'vitamink', 'zinc', 'total_minutes_of_sleep', 'basal_insulin', 'bolus_insulin']
+
+    def get_label_columns(self):
+        return ['label']
+
+    def get_data_columns(self):
+        return ['bg', 'diff5', 'diff10', 'diff15', 'diff20', 'diff25',
+                'diff30', 'glycemicindex', 'calories', 'carbs', 'fiber', 'sugar',
+                'basal_insulin', 'bolus_insulin']
 
     def get_data(self):
-        correlated_data = []
         data_dict = self._query_data()
-        correlated_data = correlated_data + self._correlate_data(data_dict)
-        test_data = pd.DataFrame(correlated_data, columns=self.get_data_columns())
-        return test_data
+        correlated_data = self._correlate_data(data_dict)
+        test_data = pd.DataFrame(correlated_data, columns=self._all_columns())
+
+        print(test_data['bg'].dtype)
+        print(test_data['bg-5'].dtype)
+
+        # feature engineering
+        test_data['diff5'] = np.log(test_data['bg']) - np.log(test_data['bg-5'])
+        test_data['diff10'] = np.log(test_data['bg-5']) - np.log(test_data['bg-10'])
+        test_data['diff15'] = (np.log(test_data['bg-10']) - np.log(test_data['bg-15']))
+        test_data['diff20'] = (np.log(test_data['bg-15']) - np.log(test_data['bg-20']))
+        test_data['diff25'] = (np.log(test_data['bg-20']) - np.log(test_data['bg-25']))
+        test_data['diff30'] = (np.log(test_data['bg-25']) - np.log(test_data['bg-30']))
+        # test_data['difflabel'] = np.log(test_data['label']) - np.log(test_data['bg'])
+
+        # remove columns we don't need and any columns will nulls
+        all_columns = self.get_data_columns()
+        all_columns.append(*self.get_label_columns())
+        all_data = test_data[all_columns]
+        ix = all_data.isnull().any(axis=1)
+        test_data = all_data.loc[~ix, :]
+
+        self._test_data = test_data
+        return self._test_data
+
+    def get_next_training_data(self, batch_size):
+        if self._test_data.empty:
+            self.get_data()
+
+        # check to make sure more rows exist
+        row_count, _ = self._test_data.shape
+        if self._curr_row + batch_size > row_count:
+            raise ValueError("More rows than exists in DataFrame")
+
+        # get the next batch_size training set
+        next_training_df = self._test_data.iloc[self._curr_row:self._curr_row + batch_size]
+
+        # break into features and labels
+        feature_df = next_training_df[self.get_data_columns()]
+        label_df = next_training_df[self.get_label_columns()].values[-1]
+
+        # update current row pointer and return
+        # use a sliding data set
+        self._curr_row += 1
+
+        return feature_df, label_df
