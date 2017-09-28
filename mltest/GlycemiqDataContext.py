@@ -2,7 +2,8 @@ import psycopg2
 import psycopg2.extras
 import numpy as np
 import pandas as pd
-
+import math
+import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, time
 
 
@@ -108,7 +109,10 @@ class GlycemiqDataContext:
         self._date_range = 4
 
         self._curr_row = 0
+        self._reset_row = 0
+        self._row_count = 0
         self._test_data = pd.DataFrame()
+        self._first_batch = True
 
         self._conversions = {
             'µg': self._convert_micrograms_to_grams,
@@ -346,6 +350,22 @@ class GlycemiqDataContext:
                 'riboflavin', 'saturatedfat', 'sodium', 'sugar', 'thiamin', 'totalfat', 'vitamina', 'vitaminb6',
                 'vitaminc', 'vitamine', 'vitamink', 'zinc', 'total_minutes_of_sleep', 'basal_insulin', 'bolus_insulin']
 
+    def _get_next_continuous_batch(self, batch_size):
+        while True:
+            next_training_df = self._test_data.iloc[self._curr_row:self._curr_row + batch_size]
+
+            # make sure we have a continuous timeseries
+            first_timestamp = min(next_training_df['timestamp'])
+            last_timestamp = first_timestamp + timedelta(minutes=35)
+
+            if next_training_df['timestamp'].between(first_timestamp, last_timestamp).all():
+                break
+            else:
+                print('Non-continuous timeseries. Incrementing counter...')
+                self._curr_row += 1
+
+        return next_training_df
+
     def get_label_columns(self):
         return ['label']
 
@@ -359,9 +379,6 @@ class GlycemiqDataContext:
         correlated_data = self._correlate_data(data_dict)
         test_data = pd.DataFrame(correlated_data, columns=self._all_columns())
 
-        print(test_data['bg'].dtype)
-        print(test_data['bg-5'].dtype)
-
         # feature engineering
         test_data['diff5'] = np.log(test_data['bg']) - np.log(test_data['bg-5'])
         test_data['diff10'] = np.log(test_data['bg-5']) - np.log(test_data['bg-10'])
@@ -371,14 +388,15 @@ class GlycemiqDataContext:
         test_data['diff30'] = (np.log(test_data['bg-25']) - np.log(test_data['bg-30']))
         # test_data['difflabel'] = np.log(test_data['label']) - np.log(test_data['bg'])
 
-        # remove columns we don't need and any columns will nulls
-        all_columns = self.get_data_columns()
-        all_columns.append(*self.get_label_columns())
-        all_data = test_data[all_columns]
-        ix = all_data.isnull().any(axis=1)
-        test_data = all_data.loc[~ix, :]
+        # remove any columns with nulls
+        ix = test_data.isnull().any(axis=1)
+        test_data = test_data.loc[~ix, :]
 
         self._test_data = test_data
+
+        # plt.hist(test_data['bg'], normed=True, bins=30)
+        # plt.show()
+
         return self._test_data
 
     def get_next_training_data(self, batch_size):
@@ -386,12 +404,46 @@ class GlycemiqDataContext:
             self.get_data()
 
         # check to make sure more rows exist
-        row_count, _ = self._test_data.shape
-        if self._curr_row + batch_size > row_count:
-            raise ValueError("More rows than exists in DataFrame")
+        # only train on 80% of the data
+        self._row_count, _ = self._test_data.shape
+        self._row_count = int(math.floor(self._row_count * 0.8))
+        if self._curr_row + batch_size > self._row_count:
+            print("Exceeded rows in data set. Resetting...")
+            self._reset_row = 0
+            self._curr_row = self._reset_row
 
         # get the next batch_size training set
-        next_training_df = self._test_data.iloc[self._curr_row:self._curr_row + batch_size]
+        next_training_df = self._get_next_continuous_batch(batch_size)
+
+        # break into features and labels
+        feature_df = next_training_df[self.get_data_columns()]
+        label_df = next_training_df[self.get_label_columns()].values[-1]
+
+        # update current row pointer and return
+        # use a sliding data set
+        self._curr_row += 1
+
+        return feature_df, label_df
+
+    def get_next_test_data(self, batch_size):
+        if self._test_data.empty:
+            raise EnvironmentError("You must train the model before testing")
+
+        # get the last 20% of the test_data
+        # only want to do this for the first iteration
+        if self._first_batch:
+            self._row_count, _ = self._test_data.shape
+            twenty_pct = int(math.floor(self._row_count * 0.2))
+            self._curr_row = self._row_count - twenty_pct
+            self._first_batch = False
+
+        if self._curr_row + batch_size > self._row_count:
+            print("Exceeded rows in data set. End of batch.")
+            self._first_batch = True
+            return None, None
+
+        # get next continuous batch
+        next_training_df = self._get_next_continuous_batch(batch_size)
 
         # break into features and labels
         feature_df = next_training_df[self.get_data_columns()]
