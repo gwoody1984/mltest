@@ -361,7 +361,8 @@ class GlycemiqDataContext:
             if next_training_df['timestamp'].between(first_timestamp, last_timestamp).all():
                 break
             else:
-                print('Non-continuous timeseries. Incrementing counter...')
+                print('Non-continuous timeseries from step {} to {}'.format(
+                    self._curr_row, self._curr_row + batch_size))
                 self._curr_row += 1
 
         return next_training_df
