@@ -102,11 +102,8 @@ class GlycemiqDataContext:
     and sd.level in ('asleep', 'restless')
     """  # and ss.date = %s
 
-    def __init__(self):
-        # TODO: these should come in as a params
-        self._user_id = "5WG9G5"
-        self._start_date = datetime(2017, 8, 7)
-        self._date_range = 4
+    def __init__(self, user_id):
+        self._user_id = user_id
 
         self._curr_row = 0
         self._reset_row = 0
@@ -251,23 +248,18 @@ class GlycemiqDataContext:
 
     def _get_sleep(self, sleep_data: list, timestamp: datetime) -> int:
         """
-        Get the total sleep up to the given timestamp
-
-        Note - may want to look back 24hrs since some sleep would have occurred the night before
+        Get the total sleep for the last 24 hrs
         """
         sleep_records = []
         for sleep in sleep_data:
-            if sleep[0] <= timestamp:
+            if timestamp >= sleep[0] > timestamp - timedelta(hours=24):
                 sleep_records.append(sleep[2])
         total_sleep = sum(sleep_records)
         return total_sleep
 
     def _get_food_intake(self, bg_data: tuple, food_data: list, i: int, timestamp: datetime) -> list:
         """
-        Gets the food intake between ticks of blood glucose.
-
-        Note - this may need to be altered to get food consumed within a given window
-         for live predictions
+        Gets the food intake for the last two hours.
         """
         if i == 0:
             # look for any food consumed on or before the first bg level
@@ -371,9 +363,11 @@ class GlycemiqDataContext:
         return ['label']
 
     def get_data_columns(self):
-        return ['bg', 'diff5', 'diff10', 'diff15', 'diff20', 'diff25',
-                'diff30', 'glycemicindex', 'calories', 'carbs', 'fiber', 'sugar',
-                'basal_insulin', 'bolus_insulin']
+        return ['bg', 'diff5', 'diff10', 'diff15', 'diff20',
+                'steps', 'sedentary_minutes', 'lightly_active_minutes', 'fairly_active_minutes', 'very_active_minutes',
+                'calories', 'carbs', 'fiber', 'sugar', 'totalfat', 'glycemicindex', 'protein',
+                'basal_insulin', 'bolus_insulin', 'total_minutes_of_sleep'
+                ]
 
     def get_data(self):
         data_dict = self._query_data()

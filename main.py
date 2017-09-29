@@ -1,5 +1,8 @@
-from mltest import model
+from mltest import rnn_model as model, glycemiq_data_context as gcd
 
-init, optimizer, cost, prediction, x_input, y_input = model.create()
-model_file = model.train(init, optimizer, cost, prediction, x_input, y_input)
-model.test(model_file)
+context = gcd.GlycemiqDataContext("5WG9G5")
+
+rnn = model.RnnModel(context)
+init, optimizer, cost, prediction, x_input, y_input = rnn.create()
+model_file = rnn.train(init, optimizer, cost, prediction, x_input, y_input)
+rnn.test(model_file)
